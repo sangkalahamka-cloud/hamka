@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asisten Ujian Disertasi</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#e2e0d8;--acc:#1f5f8b;--acc2:#e8f1f7;--warn:#a15c00;--warnbg:#fdf3e3;--ok:#2e7d4f;--rec:#c0392b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--card:#1e2126;--ink:#ebe9e4;--mute:#a09e98;--line:#30343a;--acc:#6fb3e0;--acc2:#1d2d3a;--warn:#e0a651;--warnbg:#2e2616;--ok:#6fcf97;--rec:#ff6b5b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}
+main{max-width:1280px;margin:0 auto;padding:16px;display:grid;grid-template-columns:320px 1fr;gap:16px}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute)}
+label{display:block;font-size:13px;color:var(--mute);margin:8px 0 4px}
+input,select,textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:70px;resize:vertical}
+button{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
+button.sec{background:transparent;color:var(--acc)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mic{width:84px;height:84px;border-radius:50%;font-size:30px;padding:0}
+.mic.on{background:var(--rec);border-color:var(--rec);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 12px transparent}0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rec) 50%,transparent)}}
+.small{font-size:12px;color:var(--mute)}
+.transcript{font-size:17px;min-height:48px;padding:10px;border-radius:8px;background:var(--acc2)}
+.transcript .interim{color:var(--mute)}
+.answer{font-size:18px;line-height:1.75}
+.answer h3{font-size:15px;color:var(--acc);margin:16px 0 4px}
+.answer .extra{background:var(--warnbg);border-left:3px solid var(--warn);padding:2px 8px}
+.cite{display:inline-block;font-size:12px;background:var(--acc2);color:var(--acc);border-radius:4px;padding:0 5px;cursor:pointer;font-weight:600}
+.src{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+.src b{color:var(--acc)}
+.src.hl{outline:2px solid var(--acc)}
+.outline{max-height:280px;overflow:auto;font-size:13px}
+.outline div{padding:2px 0;border-bottom:1px dotted var(--line)}
+.hist{font-size:13px;max-height:260px;overflow:auto}
+.hist div{padding:4px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.timer{font-variant-numeric:tabular-nums;font-weight:600}
+.pill{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--acc2);color:var(--acc)}
+.notice{background:var(--warnbg);color:var(--warn);padding:8px;border-radius:6px;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎓 Asisten Ujian Tutup Disertasi</h1>
+  <span id="docStatus" class="pill">Belum ada disertasi</span>
+</header>
+<main>
+<aside>
+  <div class="card">
+    <h2>1. Unggah disertasi</h2>
+    <input type="file" id="file" accept=".pdf,.docx,.txt,.md">
+    <p class="small">PDF (nomor halaman terbaca), DOCX (bab/subbab), atau TXT. File diproses di browser Anda, tidak diunggah ke server mana pun selain potongan relevan yang dikirim ke Claude saat menjawab.</p>
+    <div id="progress" class="small"></div>
+  </div>
+  <div class="card">
+    <h2>2. Pengaturan</h2>
+    <label>Kunci API Anthropic</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-...">
+    <label>Model</label>
+    <select id="model">
+      <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (cepat, disarankan)</option>
+      <option value="claude-opus-5-5">Claude Opus 5.5 (paling mendalam)</option>
+      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (tercepat)</option>
+    </select>
+    <label>Durasi jawaban lisan</label>
+    <select id="dur"><option value="1">± 1 menit</option><option value="2" selected>± 2–3 menit</option><option value="3">± 3–4 menit</option></select>
+    <label>Jeda hening sebelum jawab otomatis (detik)</label>
+    <input type="number" id="silence" value="3" min="1" max="10" step="0.5">
+    <label>Judul / identitas singkat disertasi (opsional)</label>
+    <textarea id="ctx" placeholder="Judul, metode (mis. PLS-SEM, mixed methods), lokasi penelitian..."></textarea>
+    <label class="row" style="color:var(--ink)"><input type="checkbox" id="tts" style="width:auto"> Bacakan jawaban (suara)</label>
+    <p class="small">Kunci API disimpan hanya di browser ini.</p>
+  </div>
+  <div class="card">
+    <h2>Peta disertasi</h2>
+    <div id="outline" class="outline small">—</div>
+    <button class="sec" id="predictBtn" style="margin-top:8px" disabled>Prediksi pertanyaan penguji</button>
+  </div>
+  <div class="card">
+    <h2>Riwayat tanya-jawab</h2>
+    <div id="hist" class="hist small">—</div>
+  </div>
+</aside>
+<section>
+  <div class="card">
+    <h2>3. Dengarkan pertanyaan penguji</h2>
+    <div class="row">
+      <button class="mic" id="micBtn" title="Mulai/berhenti mendengar">🎙️</button>
+      <div style="flex:1;min-width:200px">
+        <div id="micStatus" class="small">Tekan mikrofon. Sistem mendengar terus-menerus; setelah penguji diam beberapa detik, jawaban disusun otomatis.</div>
+        <div id="speechWarn"></div>
+      </div>
+    </div>
+    <label>Pertanyaan yang terdengar (bisa diedit / diketik manual)</label>
+    <div id="transcript" class="transcript" contenteditable="true"></div>
+    <div class="row" style="margin-top:8px">
+      <button id="askBtn">Jawab sekarang</button>
+      <button class="sec" id="clearBtn">Bersihkan</button>
+      <span class="small">Pintasan: <b>Ctrl+Enter</b> jawab · <b>Spasi</b> (di luar kotak) mikrofon</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Jawaban yang disarankan</h2><span class="small">Estimasi durasi bicara: <span id="est" class="timer">–</span></span></div>
+    <div id="answer" class="answer"><p class="small">Jawaban akan tampil di sini. Kutipan seperti <span class="cite">S3</span> menunjuk ke bagian disertasi di panel sumber.</p></div>
+  </div>
+  <div class="card">
+    <h2>Sumber dalam disertasi</h2>
+    <div id="sources" class="small">—</div>
+  </div>
+</section>
+</main>
+<script>
+if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $=id=>document.getElementById(id);
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+['apiKey','model','dur','silence','ctx'].forEach(k=>{const v=store.get('aud_'+k);if(v!==null)$(k).value=v;$(k).addEventListener('change',()=>store.set('aud_'+k,$(k).value))});
+$('tts').checked=store.get('aud_tts')==='1';$('tts').onchange=()=>store.set('aud_tts',$('tts').checked?'1':'0');
+
+// ---------- Dokumen: ekstraksi & pemetaan ----------
+let DOC={name:'',chunks:[],outline:[]};
+const HEAD_RE=/^(BAB\s+[IVXLC\d]+\b.*|CHAPTER\s+\d+.*|(\d+\.){1,3}\d*\s+[A-Z][^.]{2,90}|[A-Z][A-Z\s,&\-]{6,80})$/;
+
+$('file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $('progress').textContent='Membaca '+f.name+' ...';
+  let units=[]; // {text,page,heading}
+  try{
+    if(/\.pdf$/i.test(f.name)){
+      const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+      for(let p=1;p<=pdf.numPages;p++){
+        const tc=await (await pdf.getPage(p)).getTextContent();
+        let lines=[],cur='',lastY=null;
+        for(const it of tc.items){const y=it.transform[5];if(lastY!==null&&Math.abs(y-lastY)>2){lines.push(cur);cur=''}cur+=it.str;lastY=y;if(it.hasEOL){lines.push(cur);cur='';lastY=null}}
+        lines.push(cur);
+        units.push({page:p,lines:lines.map(s=>s.trim()).filter(Boolean)});
+        if(p%10===0)$('progress').textContent=`Membaca halaman ${p}/${pdf.numPages} ...`;
+      }
+    }else if(/\.docx$/i.test(f.name)){
+      const {value}=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});
+      const d=new DOMParser().parseFromString(value,'text/html');
+      const lines=[...d.body.children].map(el=>(/^H\d/.test(el.tagName)?'\u0001':'')+el.textContent.trim()).filter(s=>s.replace('\u0001',''));
+      units.push({page:null,lines});
+    }else{
+      units.push({page:null,lines:(await f.text()).split(/\n/).map(s=>s.trim()).filter(Boolean)});
+    }
+  }catch(err){$('progress').textContent='Gagal membaca file: '+err.message;return}
+  buildChunks(f.name,units);
+};
+
+function buildChunks(name,units){
+  const chunks=[],outline=[];let heading='(Awal dokumen)',buf=[],bufPage=null,words=0;
+  const flush=()=>{if(buf.length){chunks.push({id:'S'+(chunks.length+1),heading,page:bufPage,text:buf.join(' ')});}buf=[];words=0;bufPage=null};
+  for(const u of units){
+    for(let line of u.lines){
+      const forced=line.startsWith('\u0001');line=line.replace('\u0001','');
+      if((forced||HEAD_RE.test(line))&&line.length<120&&!/^\d+$/.test(line)){
+        flush();heading=line;outline.push({h:line,page:u.page});continue;
+      }
+      if(bufPage===null)bufPage=u.page;
+      buf.push(line);words+=line.split(/\s+/).length;
+      if(words>=220)flush();
+    }
+  }
+  flush();
+  DOC={name,chunks,outline};
+  indexDocs();
+  store.set('aud_doc',JSON.stringify(DOC));
+  renderDoc();
+}
+function renderDoc(){
+  $('docStatus').textContent=`📄 ${DOC.name} · ${DOC.chunks.length} bagian terpetakan`;
+  $('progress').textContent='Selesai. Disertasi siap dijadikan sumber jawaban.';
+  $('outline').innerHTML=DOC.outline.length?DOC.outline.slice(0,400).map(o=>`<div>${esc(o.h)}${o.page?` <span class="small">· hlm ${o.page}</span>`:''}</div>`).join(''):'Judul bab tidak terdeteksi; pencarian tetap berjalan per potongan teks.';
+  $('predictBtn').disabled=false;
+}
+
+// ---------- Pencarian BM25 ----------
+const STOP=new Set('yang dan di ke dari ini itu dengan untuk pada adalah dalam tidak akan atau juga oleh sebagai karena bahwa saya anda kita kami mereka ada apa bagaimana mengapa kenapa bisa dapat telah sudah lebih serta tersebut para sangat jika maka agar saudara saudari bapak ibu tolong coba jelaskan menurut mohon the of and to in is are a an for on with how why what'.split(' '));
+const tok=s=>s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9\s-]/g,' ').split(/\s+/).filter(w=>w.length>2&&!STOP.has(w)).map(stem);
+function stem(w){ // stemmer ringan bahasa Indonesia
+  w=w.replace(/(lah|kah|nya|pun)$/,'');
+  w=w.replace(/^(meng|meny|mem|men|me|peng|peny|pem|pen|pe|ber|ter|di|ke|se)(?=\w{4,})/,'');
+  w=w.replace(/(kan|an|i)$/,m=>w.length>6?'':m);return w}
+let IDX=null;
+function indexDocs(){
+  const df={},docs=DOC.chunks.map(c=>{const t=tok(c.heading+' '+c.text),tf={};t.forEach(w=>tf[w]=(tf[w]||0)+1);Object.keys(tf).forEach(w=>df[w]=(df[w]||0)+1);return{tf,len:t.length}});
+  const avg=docs.reduce((a,d)=>a+d.len,0)/Math.max(docs.length,1);IDX={df,docs,avg,N:docs.length};
+}
+function search(q,k=10){
+  if(!IDX)return[];const qt=[...new Set(tok(q))],{df,docs,avg,N}=IDX;
+  return docs.map((d,i)=>{let s=0;for(const w of qt){const f=d.tf[w];if(!f)continue;const idf=Math.log(1+(N-df[w]+.5)/(df[w]+.5));s+=idf*f*2.2/(f+1.2*(.25+.75*d.len/avg))}return{i,s}})
+    .filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,k).map(x=>DOC.chunks[x.i]);
+}
+
+// ---------- Claude ----------
+function systemPrompt(){
+  const words={1:'130–170',2:'280–380',3:'400–500'}[$('dur').value];
+  return `Anda adalah asisten pendamping promovendus dalam UJIAN TUTUP DISERTASI. Tugas: menyusun jawaban lisan yang siap diucapkan promovendus kepada dewan penguji.
+Konteks disertasi dari promovendus: ${$('ctx').value||'(tidak diisi)'}.
+
+ATURAN:
+1. Sumber utama WAJIB potongan disertasi yang diberikan (berlabel [S#]). Setiap klaim yang berasal dari disertasi diberi kutipan [S#] tepat setelah kalimatnya.
+2. Jika pertanyaan tidak terjawab langsung oleh disertasi, atau penguji menantang/menguji argumen, susun argumentasi akademik yang logis untuk MEMPERKUAT posisi disertasi (teori, logika metodologis, implikasi). Bungkus bagian ini dengan tag <tambahan>...</tambahan> agar promovendus tahu bagian itu bukan dari naskah.
+3. JANGAN mengarang referensi eksternal (penulis, tahun, DOI). Jika perlu merujuk literatur luar, sebut hanya teori/konsep umum, atau tulis "(perlu verifikasi)".
+4. Bahasa Indonesia akademik yang lugas, sopan kepada penguji ("Terima kasih atas pertanyaannya, Prof./Dr. ..."), orang pertama ("dalam penelitian saya...").
+5. Jika pertanyaan berupa kritik atas kelemahan, akui secara elegan, jelaskan alasan desain, dan tunjukkan mitigasi/keterbatasan yang sudah dibahas di disertasi.
+6. Panjang total ${words} kata (durasi bicara yang diminta).
+
+FORMAT (markdown sederhana):
+### Inti jawaban
+(1–2 kalimat langsung menjawab)
+### Penjelasan
+(paragraf dengan kutipan [S#])
+### Penguatan argumen
+(boleh berisi <tambahan>...</tambahan>)
+### Penutup
+(1 kalimat ringkas)
+### Lokasi di disertasi
+(daftar singkat: [S#] — bab/subbab/halaman yang perlu ditunjukkan bila penguji meminta)`;
+}
+async function callClaude(userText,onText,maxTokens=1800){
+  const key=$('apiKey').value.trim();if(!key)throw new Error('Isi kunci API Anthropic di Pengaturan.');
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:$('model').value,max_tokens:maxTokens,stream:true,system:systemPrompt(),messages:[{role:'user',content:userText}]})});
+  if(!r.ok)throw new Error('API '+r.status+': '+(await r.text()).slice(0,300));
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='',out='';
+  for(;;){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);
+      if(!line.startsWith('data:'))continue;try{const ev=JSON.parse(line.slice(5));
+        if(ev.type==='content_block_delta'&&ev.delta.type==='text_delta'){out+=ev.delta.text;onText(out)}
+        if(ev.type==='error')throw new Error(ev.error.message)}catch(e){if(e.message&&!/JSON/.test(e.message))throw e}}}
+  return out;
+}
+const loc=c=>`${c.heading}${c.page?` · hlm ${c.page}`:''}`;
+function contextBlock(hits){return hits.map(c=>`[${c.id}] (${loc(c)})\n${c.text}`).join('\n\n')}
+
+let busy=false,history=[];
+async function answer(q){
+  q=(q||'').trim();if(!q||busy)return;
+  if(!DOC.chunks.length){$('answer').innerHTML='<p class="notice">Unggah disertasi terlebih dahulu.</p>';return}
+  busy=true;$('askBtn').disabled=true;
+  const hits=search(q,10);
+  renderSources(hits);
+  $('answer').innerHTML='<p class="small">Menyusun jawaban…</p>';
+  const recent=history.slice(-3).map(h=>`- ${h.q}`).join('\n');
+  const prompt=`Potongan disertasi paling relevan:\n\n${hits.length?contextBlock(hits):'(tidak ditemukan potongan yang cocok — gunakan argumentasi dan tandai <tambahan>)'}\n\n${recent?'Pertanyaan penguji sebelumnya (konteks):\n'+recent+'\n\n':''}PERTANYAAN PENGUJI SEKARANG (hasil transkripsi suara, mungkin ada salah dengar):\n"${q}"`;
+  try{
+    const out=await callClaude(prompt,t=>renderAnswer(t));
+    renderAnswer(out);history.push({q,a:out,hits});renderHist();
+    if($('tts').checked)speak(out);
+  }catch(err){
+    $('answer').innerHTML=`<p class="notice">${esc(err.message)}</p><p class="small">Mode luring: berikut bagian disertasi yang paling relevan untuk menjawab.</p>`+hits.slice(0,4).map(c=>`<p><span class="cite">${c.id}</span> ${esc(c.text.slice(0,500))}…</p>`).join('');
+  }
+  busy=false;$('askBtn').disabled=false;
+}
+function renderAnswer(t){
+  let h=esc(t).replace(/&lt;tambahan&gt;([\s\S]*?)(&lt;\/tambahan&gt;|$)/g,'<span class="extra" title="Argumen tambahan — tidak tertulis eksplisit di disertasi">➕ $1</span>')
+    .replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\[(S\d+(?:\s*,\s*S\d+)*)\]/g,(_,g)=>g.split(/\s*,\s*/).map(s=>`<span class="cite" data-s="${s}">${s}</span>`).join(' '))
+    .replace(/\n{2,}/g,'<br><br>').replace(/\n/g,'<br>');
+  $('answer').innerHTML=h;
+  const w=t.replace(/<[^>]+>|###.*|\[S\d+\]/g,'').split(/\s+/).filter(Boolean).length;
+  const sec=Math.round(w/130*60);$('est').textContent=`${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} (${w} kata)`;
+}
+function renderSources(hits){
+  $('sources').innerHTML=hits.length?hits.map(c=>`<div class="src" id="src-${c.id}"><b>${c.id}</b> · ${esc(loc(c))}<br>${esc(c.text.slice(0,420))}${c.text.length>420?'…':''}</div>`).join(''):'Tidak ada bagian yang cocok.';
+}
+$('answer').onclick=e=>{const s=e.target.dataset&&e.target.dataset.s;if(!s)return;
+  let el=$('src-'+s);if(!el){const c=DOC.chunks.find(x=>x.id===s);if(c){$('sources').insertAdjacentHTML('afterbegin',`<div class="src" id="src-${c.id}"><b>${c.id}</b> · ${esc(loc(c))}<br>${esc(c.text)}</div>`);el=$('src-'+s)}}
+  if(el){document.querySelectorAll('.src.hl').forEach(x=>x.classList.remove('hl'));el.classList.add('hl');el.scrollIntoView({behavior:'smooth',block:'center'})}};
+function renderHist(){$('hist').innerHTML=history.map((h,i)=>`<div data-i="${i}">${i+1}. ${esc(h.q.slice(0,90))}</div>`).reverse().join('')}
+$('hist').onclick=e=>{const i=e.target.dataset.i;if(i===undefined)return;const h=history[i];$('transcript').textContent=h.q;renderSources(h.hits);renderAnswer(h.a)};
+
+$('predictBtn').onclick=async()=>{
+  const sample=DOC.outline.map(o=>o.h).join('\n').slice(0,6000);
+  const keys=['rumusan masalah tujuan','kebaruan novelty kontribusi','metode sampel analisis','hasil temuan utama','keterbatasan saran implikasi'];
+  const hits=[...new Map(keys.flatMap(k=>search(k,3)).map(c=>[c.id,c])).values()];
+  renderSources(hits);$('answer').innerHTML='<p class="small">Memprediksi pertanyaan penguji…</p>';
+  try{const out=await callClaude(`Daftar isi disertasi:\n${sample}\n\nCuplikan:\n${contextBlock(hits)}\n\nABAIKAN format jawaban di atas. Buat 12 pertanyaan yang paling mungkin diajukan dewan penguji ujian tutup (kebaruan, teori, metodologi, validitas, temuan, implikasi, keterbatasan). Untuk tiap pertanyaan beri 1 kalimat poin kunci jawaban dan rujukan [S#]. Gunakan heading "### Prediksi pertanyaan".`,t=>renderAnswer(t),2500);renderAnswer(out)}
+  catch(err){$('answer').innerHTML=`<p class="notice">${esc(err.message)}</p>`}
+};
+
+// ---------- Suara ----------
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,listening=false,finalText='',silenceTimer=null;
+if(!SR){$('speechWarn').innerHTML='<p class="notice">Browser ini tidak mendukung pengenalan suara. Gunakan Google Chrome atau Microsoft Edge (desktop/Android). Pertanyaan tetap bisa diketik.</p>';$('micBtn').disabled=true}
+function startRec(){
+  rec=new SR();rec.lang='id-ID';rec.continuous=true;rec.interimResults=true;
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)finalText+=r[0].transcript+' ';else interim+=r[0].transcript}
+    $('transcript').innerHTML=esc(finalText)+`<span class="interim">${esc(interim)}</span>`;
+    clearTimeout(silenceTimer);
+    silenceTimer=setTimeout(()=>{if(finalText.trim().split(/\s+/).length>=4&&!busy){const q=finalText;finalText='';answer(q)}},(+$('silence').value||3)*1000)};
+  rec.onend=()=>{if(listening)try{rec.start()}catch(e){}};
+  rec.onerror=e=>{if(e.error==='not-allowed'){listening=false;updMic();$('micStatus').textContent='Izin mikrofon ditolak. Buka lewat https atau localhost, lalu izinkan mikrofon.'}};
+  rec.start();
+}
+function updMic(){$('micBtn').classList.toggle('on',listening);$('micStatus').textContent=listening?'Mendengarkan… (bicara penguji ditranskripsi otomatis)':'Mikrofon mati.'}
+$('micBtn').onclick=()=>{listening=!listening;if(listening){finalText='';startRec()}else{try{rec.stop()}catch(e){}}updMic()};
+$('askBtn').onclick=()=>{clearTimeout(silenceTimer);const q=$('transcript').textContent;finalText='';answer(q)};
+$('clearBtn').onclick=()=>{finalText='';$('transcript').textContent=''};
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey&&e.key==='Enter'){e.preventDefault();$('askBtn').click()}
+  else if(e.code==='Space'&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('micBtn').click()}
+});
+function speak(t){if(!window.speechSynthesis)return;speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(t.replace(/<\/?tambahan>|###|\[S\d+(,\s*S\d+)*\]|\*\*/g,''));u.lang='id-ID';speechSynthesis.speak(u)}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+// muat dokumen terakhir
+try{const d=JSON.parse(store.get('aud_doc')||'null');if(d&&d.chunks){DOC=d;indexDocs();renderDoc();$('progress').textContent='Disertasi terakhir dimuat dari penyimpanan browser.'}}catch(e){}
+</script>
+</body>
+</html>
