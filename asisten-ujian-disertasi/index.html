@@ -201,35 +201,40 @@ function search(q,k=10){
 }
 
 // ---------- Claude ----------
+const FULL_LIMIT=700000; // karakter; di bawah ini seluruh disertasi dikirim (dengan prompt caching)
+const fullMode=()=>DOC.chunks.reduce((n,c)=>n+c.text.length,0)<=FULL_LIMIT;
 function systemPrompt(){
   const words={1:'130–170',2:'280–380',3:'400–500'}[$('dur').value];
-  return `Anda adalah asisten pendamping promovendus dalam UJIAN TUTUP DISERTASI. Tugas: menyusun jawaban lisan yang siap diucapkan promovendus kepada dewan penguji.
-Konteks disertasi dari promovendus: ${$('ctx').value||'(tidak diisi)'}.
+  return `Anda menyusun jawaban lisan yang akan langsung diucapkan promovendus kepada dewan penguji ujian tutup disertasi.
+Konteks disertasi: ${$('ctx').value||'(lihat naskah)'}.
 
-ATURAN:
-1. Sumber utama WAJIB potongan disertasi yang diberikan (berlabel [S#]). Setiap klaim yang berasal dari disertasi diberi kutipan [S#] tepat setelah kalimatnya.
-2. Jika pertanyaan tidak terjawab langsung oleh disertasi, atau penguji menantang/menguji argumen, susun argumentasi akademik yang logis untuk MEMPERKUAT posisi disertasi (teori, logika metodologis, implikasi). Bungkus bagian ini dengan tag <tambahan>...</tambahan> agar promovendus tahu bagian itu bukan dari naskah.
-3. JANGAN mengarang referensi eksternal (penulis, tahun, DOI). Jika perlu merujuk literatur luar, sebut hanya teori/konsep umum, atau tulis "(perlu verifikasi)".
-4. Bahasa Indonesia akademik yang lugas, sopan kepada penguji ("Terima kasih atas pertanyaannya, Prof./Dr. ..."), orang pertama ("dalam penelitian saya...").
-5. Jika pertanyaan berupa kritik atas kelemahan, akui secara elegan, jelaskan alasan desain, dan tunjukkan mitigasi/keterbatasan yang sudah dibahas di disertasi.
-6. Panjang total ${words} kata (durasi bicara yang diminta).
+LARANGAN MUTLAK:
+- DILARANG membuka dengan salam, ucapan terima kasih, pujian atas pertanyaan, atau basa-basi ("Terima kasih Prof...", "Pertanyaan yang sangat baik", "Baik, izinkan saya..."). Kalimat pertama HARUS langsung jawaban substantif.
+- DILARANG mengulang pertanyaan.
+- DILARANG mengarang angka, nama variabel, hasil uji, lokasi, atau kutipan yang tidak ada di naskah. DILARANG mengarang referensi eksternal (penulis/tahun/DOI); bila perlu tulis "(perlu verifikasi)".
 
-FORMAT (markdown sederhana):
+CARA MENJAWAB:
+1. Identifikasi dulu inti pertanyaan (abaikan salam/basa-basi penguji dan kesalahan transkripsi suara).
+2. Jawab dengan fakta PERSIS dari naskah: sebut angka, nilai statistik, nama variabel, teori, dan temuan sebagaimana tertulis. Setiap klaim dari naskah diberi [S#] tepat setelah kalimatnya.
+3. Periksa semua bagian naskah yang relevan (metode, hasil, pembahasan, simpulan) sebelum menjawab; utamakan bagian yang paling spesifik.
+4. Hanya jika naskah tidak memuat jawabannya atau penguji menantang argumen, tambahkan argumentasi akademik yang memperkuat posisi disertasi, dibungkus <tambahan>...</tambahan>. Jika naskah benar-benar tidak membahasnya, katakan jujur di dalam tag tersebut.
+5. Kritik atas kelemahan: akui singkat, jelaskan alasan desain, rujuk keterbatasan yang tertulis di naskah.
+6. Gaya: orang pertama ("dalam penelitian saya"), bahasa Indonesia akademik lugas, kalimat pendek yang enak diucapkan. Panjang ${words} kata.
+
+FORMAT:
 ### Inti jawaban
-(1–2 kalimat langsung menjawab)
+(1–2 kalimat jawaban langsung)
 ### Penjelasan
-(paragraf dengan kutipan [S#])
+(isi dengan [S#])
 ### Penguatan argumen
-(boleh berisi <tambahan>...</tambahan>)
-### Penutup
-(1 kalimat ringkas)
+(opsional; boleh <tambahan>)
 ### Lokasi di disertasi
-(daftar singkat: [S#] — bab/subbab/halaman yang perlu ditunjukkan bila penguji meminta)`;
+([S#] — bab/subbab/halaman)`;
 }
-async function callClaude(userText,onText,maxTokens=1800){
+async function callClaude(userText,onText,maxTokens=1800,docSystem=null){
   const key=$('apiKey').value.trim();if(!key)throw new Error('Isi kunci API Anthropic di Pengaturan.');
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:$('model').value,max_tokens:maxTokens,stream:true,system:systemPrompt(),messages:[{role:'user',content:userText}]})});
+    body:JSON.stringify({model:$('model').value,max_tokens:maxTokens,stream:true,system:[{type:'text',text:systemPrompt()},...(docSystem?[{type:'text',text:docSystem,cache_control:{type:'ephemeral'}}]:[])],messages:[{role:'user',content:userText}]})});
   if(!r.ok)throw new Error('API '+r.status+': '+(await r.text()).slice(0,300));
   const rd=r.body.getReader(),dec=new TextDecoder();let buf='',out='';
   for(;;){const {done,value}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
@@ -247,14 +252,15 @@ async function answer(q){
   q=(q||'').trim();if(!q||busy)return;
   if(!DOC.chunks.length){$('answer').innerHTML='<p class="notice">Unggah disertasi terlebih dahulu.</p>';return}
   busy=true;$('askBtn').disabled=true;
-  const hits=search(q,10);
+  const full=fullMode();
+  const hits=withNeighbors(search(q,14));
   renderSources(hits);
   $('answer').innerHTML='<p class="small">Menyusun jawaban…</p>';
   const recent=history.slice(-3).map(h=>`- ${h.q}`).join('\n');
-  const prompt=`Potongan disertasi paling relevan:\n\n${hits.length?contextBlock(hits):'(tidak ditemukan potongan yang cocok — gunakan argumentasi dan tandai <tambahan>)'}\n\n${recent?'Pertanyaan penguji sebelumnya (konteks):\n'+recent+'\n\n':''}PERTANYAAN PENGUJI SEKARANG (hasil transkripsi suara, mungkin ada salah dengar):\n"${q}"`;
+  const prompt=`${full?'Seluruh naskah disertasi ada di system prompt. Bagian yang kemungkinan relevan (hasil pencarian kata kunci, belum tentu lengkap): '+hits.map(c=>c.id).join(', '):'Potongan disertasi paling relevan:\n\n'+(hits.length?contextBlock(hits):'(tidak ditemukan potongan yang cocok)')}\n\n${recent?'Pertanyaan penguji sebelumnya (konteks):\n'+recent+'\n\n':''}PERTANYAAN PENGUJI SEKARANG (hasil transkripsi suara, mungkin ada salah dengar):\n"${q}"`;
   try{
-    const out=await callClaude(prompt,t=>renderAnswer(t));
-    renderAnswer(out);history.push({q,a:out,hits});renderHist();
+    const out=await callClaude(prompt,t=>renderAnswer(t),1800,full?fullDocText():null);
+    renderAnswer(out);showCited(out,hits);history.push({q,a:out,hits});renderHist();
     if($('tts').checked)speak(out);
   }catch(err){
     $('answer').innerHTML=`<p class="notice">${esc(err.message)}</p><p class="small">Mode luring: berikut bagian disertasi yang paling relevan untuk menjawab.</p>`+hits.slice(0,4).map(c=>`<p><span class="cite">${c.id}</span> ${esc(c.text.slice(0,500))}…</p>`).join('');
@@ -262,6 +268,7 @@ async function answer(q){
   busy=false;$('askBtn').disabled=false;
 }
 function renderAnswer(t){
+  t=t.replace(/^(#+ *Inti jawaban\s*\n)?\s*(Terima kasih|Baik,|Pertanyaan yang|Izinkan saya|Assalamu)[^.!\n]*[.!]\s*/i,(m,h)=>h||'');
   let h=esc(t).replace(/&lt;tambahan&gt;([\s\S]*?)(&lt;\/tambahan&gt;|$)/g,'<span class="extra" title="Argumen tambahan — tidak tertulis eksplisit di disertasi">➕ $1</span>')
     .replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
     .replace(/\[(S\d+(?:\s*,\s*S\d+)*)\]/g,(_,g)=>g.split(/\s*,\s*/).map(s=>`<span class="cite" data-s="${s}">${s}</span>`).join(' '))
@@ -270,6 +277,9 @@ function renderAnswer(t){
   const w=t.replace(/<[^>]+>|###.*|\[S\d+\]/g,'').split(/\s+/).filter(Boolean).length;
   const sec=Math.round(w/130*60);$('est').textContent=`${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')} (${w} kata)`;
 }
+function fullDocText(){return 'NASKAH DISERTASI LENGKAP (setiap bagian berlabel [S#]):\n\n'+contextBlock(DOC.chunks)}
+function withNeighbors(hits){const ids=new Set();hits.forEach(c=>{const i=DOC.chunks.indexOf(c);[i-1,i,i+1].forEach(j=>{if(DOC.chunks[j])ids.add(j)})});return[...ids].sort((a,b)=>a-b).map(j=>DOC.chunks[j]).slice(0,30)}
+function showCited(out,hits){const ids=[...new Set((out.match(/S\d+/g)||[]))];const c=ids.map(id=>DOC.chunks.find(x=>x.id===id)).filter(Boolean);if(c.length)renderSources(c)}
 function renderSources(hits){
   $('sources').innerHTML=hits.length?hits.map(c=>`<div class="src" id="src-${c.id}"><b>${c.id}</b> · ${esc(loc(c))}<br>${esc(c.text.slice(0,420))}${c.text.length>420?'…':''}</div>`).join(''):'Tidak ada bagian yang cocok.';
 }
@@ -284,7 +294,7 @@ $('predictBtn').onclick=async()=>{
   const keys=['rumusan masalah tujuan','kebaruan novelty kontribusi','metode sampel analisis','hasil temuan utama','keterbatasan saran implikasi'];
   const hits=[...new Map(keys.flatMap(k=>search(k,3)).map(c=>[c.id,c])).values()];
   renderSources(hits);$('answer').innerHTML='<p class="small">Memprediksi pertanyaan penguji…</p>';
-  try{const out=await callClaude(`Daftar isi disertasi:\n${sample}\n\nCuplikan:\n${contextBlock(hits)}\n\nABAIKAN format jawaban di atas. Buat 12 pertanyaan yang paling mungkin diajukan dewan penguji ujian tutup (kebaruan, teori, metodologi, validitas, temuan, implikasi, keterbatasan). Untuk tiap pertanyaan beri 1 kalimat poin kunci jawaban dan rujukan [S#]. Gunakan heading "### Prediksi pertanyaan".`,t=>renderAnswer(t),2500);renderAnswer(out)}
+  try{const out=await callClaude(`Daftar isi disertasi:\n${sample}\n\nCuplikan:\n${contextBlock(hits)}\n\nABAIKAN format jawaban di atas. Buat 12 pertanyaan yang paling mungkin diajukan dewan penguji ujian tutup (kebaruan, teori, metodologi, validitas, temuan, implikasi, keterbatasan). Untuk tiap pertanyaan beri 1 kalimat poin kunci jawaban dan rujukan [S#]. Gunakan heading "### Prediksi pertanyaan".`,t=>renderAnswer(t),2500,fullMode()?fullDocText():null);renderAnswer(out)}
   catch(err){$('answer').innerHTML=`<p class="notice">${esc(err.message)}</p>`}
 };
 
